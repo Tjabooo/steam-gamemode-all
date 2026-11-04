@@ -1,0 +1,5 @@
+#!/bin/sh
+# steam-gm: start Steam, first adding gamemoderun to any newly installed games
+# (launch options can only be patched while Steam is closed). Use it in place of `steam`.
+pgrep -x steam >/dev/null || ~/.local/bin/steam-gamemode-all >/dev/null 2>&1
+exec steam "$@"

@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+# steam-gamemode-all: add "gamemoderun" to the launch options of every installed Steam game.
+# Steam must be closed (it rewrites localconfig.vdf on exit). No dependencies.
+# Existing launch options are kept: %command% becomes "gamemoderun %command%". Games that already
+# have gamemoderun are left alone, and localconfig.vdf is backed up first (localconfig.vdf.bak).
+# STEAM_ROOT overrides where Steam lives (default ~/.steam/steam).
+import glob, os, re, shutil, subprocess, sys
+
+ROOT = os.environ.get("STEAM_ROOT") or os.path.realpath(os.path.expanduser("~/.steam/steam"))
+SKIP = ("Proton", "Steam Linux Runtime", "Steamworks Common")
+TOK = re.compile(r'"((?:[^"\\]|\\.)*)"|([{}])|//[^\n]*|\s+')
+
+def load(path):
+    text = open(path, encoding="utf-8", errors="surrogateescape").read()
+    stack, cur, key = [], {}, None
+    for m in TOK.finditer(text):
+        s, brace = m.group(1), m.group(2)
+        if s is not None:
+            if key is None: key = s
+            else: cur[key] = s; key = None
+        elif brace == "{":
+            new = cur.setdefault(key, {}) if isinstance(cur.get(key), dict) else {}
+            cur[key] = new; stack.append(cur); cur = new; key = None
+        elif brace == "}":
+            cur = stack.pop()
+    return cur
+
+def dump(d, lvl=0):
+    out, t = [], "\t" * lvl
+    for k, v in d.items():
+        if isinstance(v, dict):
+            out += [f'{t}"{k}"', f"{t}{{", *dump(v, lvl + 1), f"{t}}}"]
+        else:
+            out.append(f'{t}"{k}"\t\t"{v}"')
+    return out
+
+def ci(d, key):
+    for k in d:
+        if k.lower() == key.lower():
+            return d[k]
+    d[key] = {}
+    return d[key]
+
+if subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0:
+    sys.exit("Steam is running - close it first (steam -shutdown), then rerun.")
+
+games = {}
+for lib in load(f"{ROOT}/steamapps/libraryfolders.vdf")["libraryfolders"].values():
+    for acf in glob.glob(f"{lib['path']}/steamapps/appmanifest_*.acf"):
+        st = load(acf)["AppState"]
+        if not st["name"].startswith(SKIP):
+            games[st["appid"]] = st["name"]
+
+for cfg in glob.glob(f"{ROOT}/userdata/*/config/localconfig.vdf"):
+    data = load(cfg)
+    apps = ci(ci(ci(ci(ci(data, "UserLocalConfigStore"), "Software"), "Valve"), "Steam"), "apps")
+    changed = 0
+    for appid, name in sorted(games.items(), key=lambda g: g[1]):
+        app = ci(apps, appid)
+        lo = app.get("LaunchOptions", "")
+        if "gamemoderun" in lo:
+            continue
+        lo = lo.replace("%command%", "gamemoderun %command%", 1) if "%command%" in lo \
+             else ("gamemoderun %command% " + lo).strip()
+        app["LaunchOptions"] = lo
+        changed += 1
+        print(f"  {name}: {lo}")
+    if changed:
+        shutil.copy2(cfg, cfg + ".bak")
+        with open(cfg, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write("\n".join(dump(data)) + "\n")
+    print(f"{changed} game(s) updated" + (" (backup: localconfig.vdf.bak)" if changed else ""))
