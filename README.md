@@ -29,9 +29,11 @@ the `gamemode` group). For Steam elsewhere than `~/.steam/steam` (Flatpak:
 To make your app launcher's Steam entry use `steam-gm`, copy `/usr/share/applications/steam.desktop` to
 `~/.local/share/applications/` and change `Exec=/usr/bin/steam` to `Exec=steam-gm`.
 
-Undo for one game: remove `gamemoderun` from its launch options in Steam. Undo for everything:
-restore `~/.steam/steam/userdata/<id>/config/localconfig.vdf.bak` while Steam is closed.
+Undo for one game: remove `gamemoderun` from its launch options in Steam. Undo the last run: restore
+`~/.steam/steam/userdata/<id>/config/localconfig.vdf.bak` while Steam is closed. The backup is
+rewritten by every run that changes something (including `steam-gm` after you install a game), so it
+holds the state from just before the latest change, not your original launch options.
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
